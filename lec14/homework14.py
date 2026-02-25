@@ -1,28 +1,51 @@
-import gtts, speech_recognition, librosa, soundfile
+import gtts
+import speech_recognition as sr
+import librosa
+import soundfile as sf
+import os
+
 
 def synthesize(text, lang, filename):
-    '''
-    Use gtts.gTTS(text=text, lang=lang) to synthesize speech, then write it to filename.
-    
-    @params:
-    text (str) - the text you want to synthesize
-    lang (str) - the language in which you want to synthesize it
-    filename (str) - the filename in which it should be saved
-    '''
-    raise RuntimeError("You need to write this!")
+    """
+    Use gtts.gTTS(text=text, lang=lang) to synthesize speech,
+    then write it to filename (MP3).
+    """
+
+    tts = gtts.gTTS(text=text, lang=lang)
+    mp3_file = filename if filename.endswith(".mp3") else filename + ".mp3"
+    tts.save(mp3_file)
+
+    return mp3_file
+
 
 def make_a_corpus(texts, languages, filenames):
-    '''
-    Create many speech files, and check their content using SpeechRecognition.
-    The output files should be created as MP3, then converted to WAV, then recognized.
+    """
+    Create MP3 files, convert them to WAV,
+    then recognize them using SpeechRecognition.
+    """
 
-    @param:
-    texts - a list of the texts you want to synthesize
-    languages - a list of their languages
-    filenames - a list of their root filenames, without the ".mp3" ending
+    recognized_texts = []
+    recognizer = sr.Recognizer()
 
-    @return:
-    recognized_texts - list of the strings that were recognized from each file
-    '''
-    raise RuntimeError("You need to write this!")
-        
+    for text, lang, name in zip(texts, languages, filenames):
+
+        # 1. synthesize mp3
+        mp3_file = synthesize(text, lang, name)
+
+        # 2. convert mp3 → wav
+        y, sr_rate = librosa.load(mp3_file, sr=None)
+        wav_file = name + ".wav"
+        sf.write(wav_file, y, sr_rate)
+
+        # 3. recognize wav
+        with sr.AudioFile(wav_file) as source:
+            audio = recognizer.record(source)
+
+        try:
+            result = recognizer.recognize_google(audio, language=lang)
+        except:
+            result = ""
+
+        recognized_texts.append(result)
+
+    return recognized_texts
