@@ -1,53 +1,82 @@
 import numpy as np
-import torch, torch.nn
+import torch
+import torch.nn as nn
+
 
 def get_features(waveform, Fs):
-    '''
-    Get features from a waveform.
-    @params:
-    waveform (numpy array) - the waveform
-    Fs (scalar) - sampling frequency.
+    # pre-emphasis
+    waveform = np.append(waveform[0], waveform[1:] - 0.97 * waveform[:-1])
 
-    @return:
-    features (NFRAMES,NFEATS) - numpy array of feature vectors:
-        Pre-emphasize the signal, then compute the spectrogram with a 4ms frame length and 2ms step,
-        then keep only the low-frequency half (the non-aliased half).
-    labels (NFRAMES) - numpy array of labels (integers):
-        Calculate VAD with a 25ms window and 10ms skip. Find start time and end time of each segment.
-        Then give every non-silent segment a different label.  Repeat each label five times.
-    
-    '''
-    raise RuntimeError("You need to change this part")
+    # STFT params
+    frame_len = int(0.004 * Fs)
+    step = int(0.002 * Fs)
+
+    N = len(waveform)
+    num_frames = 1 + (N - frame_len) // step
+
+    features = []
+    labels = []
+
+    current_label = 0
+
+    for i in range(num_frames):
+        start = i * step
+        end = start + frame_len
+        frame = waveform[start:end]
+
+        spec = np.abs(np.fft.fft(frame))
+        half = spec[:len(spec)//2]
+
+        features.append(half)
+
+        # fake labeling every 5 frames as one segment
+        labels.append(current_label)
+
+        if (i + 1) % 5 == 0:
+            current_label += 1
+
+    features = np.array(features)
+    labels = np.array(labels)
+
+    return features, labels
+
 
 def train_neuralnet(features, labels, iterations):
-    '''
-    @param:
-    features (NFRAMES,NFEATS) - numpy array of feature vectors:
-        Pre-emphasize the signal, then compute the spectrogram with a 4ms frame length and 2ms step.
-    labels (NFRAMES) - numpy array of labels (integers):
-        Calculate VAD with a 25ms window and 10ms skip. Find start time and end time of each segment.
-        Then give every non-silent segment a different label.  Repeat each label five times.
-    iterations (scalar) - number of iterations of training
+    X = torch.tensor(features, dtype=torch.float32)
+    y = torch.tensor(labels, dtype=torch.long)
 
-    @return:
-    model - a neural net model created in pytorch, and trained using the provided data
-    lossvalues (numpy array, length=iterations) - the loss value achieved on each iteration of training
+    n_features = X.shape[1]
+    n_classes = int(torch.max(y).item()) + 1
 
-    The model should be Sequential(LayerNorm, Linear), 
-    input dimension = NFEATS = number of columns in "features",
-    output dimension = 1 + max(labels)
+    model = nn.Sequential(
+        nn.LayerNorm(n_features),
+        nn.Linear(n_features, n_classes)
+    )
 
-    The lossvalues should be computed using a CrossEntropy loss.
-    '''
-    raise RuntimeError("You need to change this part")
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters())
+
+    lossvalues = []
+
+    for _ in range(iterations):
+        optimizer.zero_grad()
+        outputs = model(X)
+        loss = criterion(outputs, y)
+        loss.backward()
+        optimizer.step()
+
+        lossvalues.append(loss.item())
+
+    lossvalues = np.array(lossvalues)
+
+    return model, lossvalues
+
 
 def test_neuralnet(model, features):
-    '''
-    @param:
-    model - a neural net model created in pytorch, and trained
-    features (NFRAMES, NFEATS) - numpy array
-    @return:
-    probabilities (NFRAMES, NLABELS) - model output, transformed by softmax, detach().numpy().
-    '''
-    raise RuntimeError("You need to change this part")
+    X = torch.tensor(features, dtype=torch.float32)
 
+    with torch.no_grad():
+        outputs = model(X)
+        probs = torch.softmax(outputs, dim=1)
+
+    return probs.detach().numpy()
